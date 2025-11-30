@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #050505;
+  color: #00ff41; /* Cyber Green */
+  font-family: 'Courier New', Courier, monospace;
+  height: 100vh;
+  overflow: hidden;
+}
+
+button {
+  transition: all 0.2s;
+}
+
+button:active {
+  transform: scale(0.95);
+}
