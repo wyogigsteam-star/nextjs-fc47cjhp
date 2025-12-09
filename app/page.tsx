@@ -1,887 +1,409 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { useGame } from './context/GameContext';
+import React, { useState } from 'react';
+import { usePavingGame } from './context/PavingGameContext';
 import {
-  generateMathQuestion,
-  calculateEnemyStats,
-} from './engines/MathLogic.js';
-import { getRandomMonster } from './engines/MonsterRoster.js';
-import { generateLoot } from './engines/LootSystem.js';
-import {
-  sfxButton,
-  sfxAttack,
-  sfxDamage,
-  sfxWin,
-  sfxCrit,
-  sfxBuy,
-} from './engines/SoundLogic.js';
+  formatMoney,
+  getEquipmentCost,
+  EQUIPMENT_TIERS,
+  WORKER_UPGRADES,
+  JOB_TYPES,
+} from './engines/PavingLogic';
 
-// ==========================================
-// 1. INTERNAL DATA (To prevent import errors)
-// ==========================================
-const PERMANENT_ITEMS = [
-  {
-    id: 'W01',
-    slot: 'weapon',
-    name: 'Neural Injector',
-    icon: '💉',
-    cost: 200,
-    attack_bonus: 5,
-    hp_bonus: 0,
-    shield_bonus: 0,
-    crit_bonus: 0,
-    description: '+5 Permanent ATK.',
-  },
-  {
-    id: 'W02',
-    slot: 'weapon',
-    name: 'Quantum Blade',
-    icon: '⚔️',
-    cost: 500,
-    attack_bonus: 12,
-    hp_bonus: 0,
-    shield_bonus: 0,
-    crit_bonus: 0,
-    description: '+12 Permanent ATK.',
-  },
-  {
-    id: 'A01',
-    slot: 'armor',
-    name: 'Kevlar Vest',
-    icon: '🛡️',
-    cost: 150,
-    attack_bonus: 0,
-    hp_bonus: 15,
-    shield_bonus: 15,
-    crit_bonus: 0,
-    description: '+15 Max HP/Shield.',
-  },
-  {
-    id: 'A02',
-    slot: 'armor',
-    name: 'Titanium Shell',
-    icon: '🪖',
-    cost: 400,
-    attack_bonus: 0,
-    hp_bonus: 30,
-    shield_bonus: 30,
-    crit_bonus: 0,
-    description: '+30 Max HP/Shield.',
-  },
-  {
-    id: 'R01',
-    slot: 'ring',
-    name: 'Zero Ring',
-    icon: '⭕',
-    cost: 100,
-    attack_bonus: 0,
-    hp_bonus: 0,
-    shield_bonus: 0,
-    crit_bonus: 0.005,
-    description: '+0.5% Permanent Crit.',
-  },
-  {
-    id: 'R02',
-    slot: 'ring',
-    name: 'Data Compass',
-    icon: '🧭',
-    cost: 300,
-    attack_bonus: 0,
-    hp_bonus: 0,
-    shield_bonus: 0,
-    crit_bonus: 0.015,
-    description: '+1.5% Permanent Crit.',
-  },
-];
+// Intro Modal Component
+const IntroModal = ({ onComplete }: { onComplete: () => void }) => {
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex items-center justify-center p-4">
+      <div className="max-w-lg w-full border-4 border-orange-500 bg-gray-900 p-6 rounded-lg shadow-xl">
+        <h1 className="text-4xl font-black mb-4 text-orange-500 text-center uppercase tracking-wider">
+          🚧 Asphalt Empire 🚧
+        </h1>
+        <div className="space-y-4 text-lg text-gray-300 mb-6">
+          <p>
+            Welcome to <span className="text-orange-400 font-bold">Asphalt Empire</span>!
+          </p>
+          <p>
+            Build your paving business from the ground up. Start with a simple shovel
+            and work your way to owning a massive paving operation.
+          </p>
+          <p className="text-yellow-400 font-semibold">
+            💰 Earn money automatically while you're away!
+          </p>
+          <p className="text-sm text-gray-500">
+            Tap equipment to buy more. Hire workers to boost your income!
+          </p>
+        </div>
+        <button
+          onClick={onComplete}
+          className="w-full py-4 bg-orange-600 text-white text-xl font-bold uppercase tracking-wider hover:bg-orange-500 transition-all rounded-lg shadow-lg"
+        >
+          Start Paving!
+        </button>
+      </div>
+    </div>
+  );
+};
 
-// ==========================================
-// 2. INTERNAL COMPONENT DEFINITIONS
-// ==========================================
+// Equipment Shop Component
+const EquipmentShop = ({ onClose }: { onClose: () => void }) => {
+  const { gameState, buyEquipment } = usePavingGame();
 
-const ShopModal = ({ onClose }) => {
-  const { gameState, upgradeStat } = useGame();
-  const BASE_COSTS = {
-    attackPower: 50,
-    maxPlayerHp: 75,
-    maxShield: 60,
-    critChance: 100,
-  };
-  const calculateCost = (statId) => {
-    const level = gameState.upgradeLevels[statId] || 0;
-    return BASE_COSTS[statId] + level * 5;
-  };
-
-  const upgrades = [
-    {
-      id: 'attackPower',
-      name: 'Cyber Blade Upgrade (+5 ATK)',
-      amount: 5,
-      currentCost: calculateCost('attackPower'),
-      currentLevel: gameState.upgradeLevels.attackPower,
-      currentStat: gameState.attackPower,
-    },
-    {
-      id: 'maxPlayerHp',
-      name: 'Vitality Boost (+25 MAX HP)',
-      amount: 25,
-      currentCost: calculateCost('maxPlayerHp'),
-      currentLevel: gameState.upgradeLevels.maxPlayerHp,
-      currentStat: gameState.maxPlayerHp,
-    },
-    {
-      id: 'maxShield',
-      name: 'Kinetic Barrier (+15 MAX Shield)',
-      amount: 15,
-      currentCost: calculateCost('maxShield'),
-      currentLevel: gameState.upgradeLevels.maxShield,
-      currentStat: gameState.maxShield,
-    },
-    {
-      id: 'critChance',
-      name: 'Neural Synapse (+0.5% Crit)',
-      amount: 0.005,
-      currentCost: calculateCost('critChance'),
-      currentLevel: gameState.upgradeLevels.critChance,
-      currentStat: (gameState.critChance * 100).toFixed(1) + '%',
-    },
-  ];
-
-  const handleBuy = (item) => {
-    if (upgradeStat(item.id, item.amount, item.currentCost)) alert(`UPGRADED!`);
-    else alert('ERROR: INSUFFICIENT GOLD.');
+  const handleBuy = (equipmentId: string) => {
+    if (buyEquipment(equipmentId)) {
+      // Success feedback could be added here
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black flex items-center justify-center z-50">
-      <div className="bg-cyber-dark border-4 border-cyber-neonPurple p-8 rounded-lg shadow-neonPurple w-full max-w-4xl relative">
-        <button
-          onClick={onClose}
-          className="absolute top-2 right-2 text-gray-500 hover:text-white text-xl"
-        >
-          ✕
-        </button>
-        <h2 className="text-3xl font-bold text-cyber-neonPurple mb-6 text-center tracking-widest">
-          THE UPGRADE MARKET
-        </h2>
-        <div className="text-xl text-yellow-400 mb-6 text-center">
-          Available Gold: {gameState.gold} G
+    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-gray-900 border-4 border-orange-500 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-3xl font-bold text-orange-500 uppercase">Equipment Shop</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-3xl leading-none"
+          >
+            ✕
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          {upgrades.map((item) => (
-            <div
-              key={item.id}
-              className="p-4 border border-cyber-gray bg-cyber-black rounded flex flex-col justify-between"
-            >
-              <div>
-                <p className="text-cyber-text font-bold">{item.name}</p>
-                <p className="text-sm text-gray-400">
-                  Lvl: {item.currentLevel} | Cur: {item.currentStat}
-                </p>
-              </div>
-              <button
-                onClick={() => handleBuy(item)}
-                className="mt-3 py-2 bg-yellow-600 text-black font-bold rounded hover:bg-yellow-400 disabled:opacity-50"
-                disabled={gameState.gold < item.currentCost}
+        
+        <div className="mb-4 text-center text-yellow-400 text-xl font-bold">
+          Balance: {formatMoney(gameState.money)}
+        </div>
+
+        <div className="space-y-3">
+          {EQUIPMENT_TIERS.map((equipment) => {
+            const owned = gameState.equipment.find((e: any) => e.id === equipment.id);
+            const count = owned ? owned.count : 0;
+            const cost = getEquipmentCost(equipment, count);
+            const canAfford = gameState.money >= cost;
+
+            return (
+              <div
+                key={equipment.id}
+                className="bg-gray-800 border-2 border-gray-700 rounded-lg p-4 hover:border-orange-500 transition-colors"
               >
-                Buy ({item.currentCost} G)
-              </button>
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={onClose}
-          className="mt-6 w-full py-2 bg-red-700 text-white font-bold rounded hover:bg-red-500"
-        >
-          EXIT
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const PermanentShop = ({ onClose }) => {
-  const { gameState, buyPermanentGear } = useGame();
-  const slots = ['weapon', 'armor', 'ring'];
-  const handleBuy = (item) => {
-    if (buyPermanentGear(item)) alert(`ITEM ACQUIRED: ${item.name}`);
-    else alert('ERROR: INSUFFICIENT GOLD.');
-  };
-  const getStatDisplay = (item, type) => {
-    if (item && item[type])
-      return `+${
-        type === 'crit_bonus' ? (item[type] * 100).toFixed(1) + '%' : item[type]
-      }`;
-    return null;
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black flex items-center justify-center z-50">
-      <div className="bg-cyber-dark border-4 border-red-500 p-8 rounded-lg shadow-neonPurple w-full max-w-5xl relative">
-        <button
-          onClick={onClose}
-          className="absolute top-2 right-2 text-gray-500 hover:text-white text-xl"
-        >
-          ✕
-        </button>
-        <h2 className="text-3xl font-bold text-red-500 mb-6 text-center tracking-widest">
-          PERMANENT GEAR MARKET
-        </h2>
-        <div className="flex justify-between items-center text-xl text-yellow-400 mb-6 border-b border-gray-700 pb-2">
-          <span>Gold: {gameState.gold} G</span>
-          <span className="text-sm text-gray-500">Refund: 50%</span>
-        </div>
-        <div className="grid grid-cols-3 gap-6">
-          {slots.map((slot) => (
-            <div
-              key={slot}
-              className="border border-gray-700 rounded-lg p-3 bg-gray-900/70"
-            >
-              <h3 className="text-lg font-bold text-cyan-400 mb-3 uppercase border-b border-gray-600 pb-1">
-                {slot} Slot
-              </h3>
-              {gameState.permanentGear[slot] ? (
-                <div className="bg-green-900/30 p-2 rounded mb-3 border border-green-600">
-                  <p className="text-white text-sm font-bold">
-                    {gameState.permanentGear[slot].icon}{' '}
-                    {gameState.permanentGear[slot].name}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500 mb-3">Slot Empty.</p>
-              )}
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {PERMANENT_ITEMS.filter((item) => item.slot === slot).map(
-                  (item) => (
-                    <div
-                      key={item.id}
-                      className="p-2 rounded flex flex-col border bg-gray-800 border-gray-700 hover:bg-gray-700"
-                    >
-                      <p className="text-sm font-bold text-white">
-                        {item.icon} {item.name}
-                      </p>
-                      <p className="text-xs text-gray-400 mb-1">
-                        {item.description}
-                      </p>
-                      <button
-                        onClick={() => handleBuy(item)}
-                        disabled={
-                          gameState.gold < item.cost ||
-                          gameState.permanentGear[slot]?.id === item.id
-                        }
-                        className="px-3 py-1 bg-yellow-600 text-black text-xs font-bold rounded disabled:opacity-50"
-                      >
-                        {gameState.permanentGear[slot]?.id === item.id
-                          ? 'EQUIPPED'
-                          : `BUY (${item.cost} G)`}
-                      </button>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-3xl">{equipment.icon}</span>
+                      <div>
+                        <h3 className="font-bold text-white text-lg">{equipment.name}</h3>
+                        <p className="text-sm text-gray-400">{equipment.description}</p>
+                      </div>
                     </div>
-                  )
-                )}
+                    <div className="flex gap-4 text-sm mt-2">
+                      <span className="text-green-400">
+                        +{formatMoney(equipment.revenuePerSecond)}/s
+                      </span>
+                      {count > 0 && (
+                        <span className="text-blue-400">Owned: {count}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleBuy(equipment.id)}
+                    disabled={!canAfford}
+                    className={`px-6 py-3 font-bold rounded-lg transition-all ${
+                      canAfford
+                        ? 'bg-orange-600 hover:bg-orange-500 text-white'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {formatMoney(cost)}
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <button
-          onClick={onClose}
-          className="mt-6 w-full py-2 bg-gray-700 text-white font-bold rounded hover:bg-gray-500"
-        >
-          CLOSE SHOP
-        </button>
       </div>
     </div>
   );
 };
 
-const KeyActions = ({ onSkip, onRevive }) => {
-  const { gameState, useKey } = useGame();
-  const handleSkip = () => {
-    if (useKey(3)) {
-      onSkip();
-      alert('SKIPPED');
-    } else {
-      alert('NEED 3 KEYS');
+// Workers Shop Component
+const WorkersShop = ({ onClose }: { onClose: () => void }) => {
+  const { gameState, buyWorker } = usePavingGame();
+
+  const handleBuy = (workerId: string) => {
+    if (buyWorker(workerId)) {
+      // Success feedback
     }
   };
-  const handleRevive = () => {
-    if (gameState.playerHp > 0) {
-      alert('HP MUST BE 0');
-      return;
-    }
-    if (useKey(5)) {
-      onRevive();
-      alert('RESTORED');
-    } else {
-      alert('NEED 5 KEYS');
-    }
-  };
+
   return (
-    <div className="flex justify-center gap-4 w-full">
-      <button
-        onClick={handleSkip}
-        disabled={gameState.quantumKeys < 3}
-        className="px-3 py-1 bg-gray-800 text-yellow-400 text-xs font-bold rounded border border-gray-600 hover:bg-gray-700 disabled:opacity-30 transition-all uppercase tracking-wider"
-      >
-        Skip (3 Keys)
-      </button>
-      <button
-        onClick={handleRevive}
-        disabled={gameState.quantumKeys < 5 || gameState.playerHp > 0}
-        className="px-3 py-1 bg-red-900/50 text-red-200 text-xs font-bold rounded border border-red-800 hover:bg-red-800 disabled:opacity-30 transition-all uppercase tracking-wider"
-      >
-        Restore (5 Keys)
-      </button>
+    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border-4 border-blue-500 rounded-lg p-6 w-full max-w-xl">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-3xl font-bold text-blue-400 uppercase">Hire Workers</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-3xl leading-none"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="mb-4 text-center text-yellow-400 text-xl font-bold">
+          Balance: {formatMoney(gameState.money)}
+        </div>
+
+        <div className="space-y-3">
+          {WORKER_UPGRADES.map((worker) => {
+            const owned = gameState.workers.find((w: any) => w.id === worker.id)?.owned || false;
+            const canAfford = gameState.money >= worker.cost;
+
+            return (
+              <div
+                key={worker.id}
+                className={`bg-gray-800 border-2 rounded-lg p-4 ${
+                  owned ? 'border-green-500' : 'border-gray-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-3xl">{worker.icon}</span>
+                      <div>
+                        <h3 className="font-bold text-white">{worker.name}</h3>
+                        <p className="text-sm text-gray-400">{worker.description}</p>
+                      </div>
+                    </div>
+                    <div className="text-sm text-purple-400 mt-1">
+                      Multiplier: ×{worker.multiplier}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleBuy(worker.id)}
+                    disabled={owned || !canAfford}
+                    className={`px-6 py-3 font-bold rounded-lg transition-all ${
+                      owned
+                        ? 'bg-green-700 text-white cursor-default'
+                        : canAfford
+                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {owned ? 'HIRED' : formatMoney(worker.cost)}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
 
-const IntroModal = ({ onComplete }) => {
-  const handleStart = () => {
-    sfxBuy();
-    onComplete();
+// Stats Display Component
+const StatsModal = ({ onClose }: { onClose: () => void }) => {
+  const { gameState, resetGame } = usePavingGame();
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
   };
+
   return (
-    <div className="fixed inset-0 bg-black z-50 flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full border-2 border-green-500 bg-black p-8 font-mono text-green-500 shadow-[0_0_20px_#00ff41]">
-        <h1 className="text-3xl font-black mb-6 tracking-widest border-b border-green-500 pb-2 animate-pulse">
-          SYSTEM BOOT...
-        </h1>
-        <div className="space-y-6 text-lg leading-relaxed mb-8">
-          <p>
-            <span className="text-white"> > CONNECTING...</span>{' '}
-            <span className="text-green-500 font-bold"> SUCCESS.</span>
-          </p>
-          <p>
-            The <span className="text-white font-bold">Infinite Archive</span>{' '}
-            has fallen. You are the{' '}
-            <span className="text-purple-400 font-bold">SCHOLAR PROTOCOL</span>.
-          </p>
-          <p className="text-red-500 font-bold">
-            WARNING: Permanent death is imminent.
-          </p>
+    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border-4 border-purple-500 rounded-lg p-6 w-full max-w-md">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-bold text-purple-400 uppercase">Stats</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-3xl leading-none"
+          >
+            ✕
+          </button>
         </div>
+
+        <div className="space-y-4 text-lg">
+          <div className="flex justify-between border-b border-gray-700 pb-2">
+            <span className="text-gray-400">Total Earned:</span>
+            <span className="text-green-400 font-bold">
+              {formatMoney(gameState.totalMoneyEarned)}
+            </span>
+          </div>
+          <div className="flex justify-between border-b border-gray-700 pb-2">
+            <span className="text-gray-400">Equipment Owned:</span>
+            <span className="text-blue-400 font-bold">
+              {gameState.equipment.reduce((sum: number, e: any) => sum + e.count, 0)}
+            </span>
+          </div>
+          <div className="flex justify-between border-b border-gray-700 pb-2">
+            <span className="text-gray-400">Workers Hired:</span>
+            <span className="text-blue-400 font-bold">
+              {gameState.workers.filter((w: any) => w.owned).length} / {gameState.workers.length}
+            </span>
+          </div>
+          <div className="flex justify-between border-b border-gray-700 pb-2">
+            <span className="text-gray-400">Time Paving:</span>
+            <span className="text-yellow-400 font-bold">
+              {formatTime(gameState.totalPavingTime)}
+            </span>
+          </div>
+          <div className="flex justify-between border-b border-gray-700 pb-2">
+            <span className="text-gray-400">Achievements:</span>
+            <span className="text-purple-400 font-bold">
+              {gameState.achievements.length}
+            </span>
+          </div>
+        </div>
+
         <button
-          onClick={handleStart}
-          className="w-full py-4 bg-green-900 text-white text-xl font-bold uppercase tracking-widest hover:bg-green-700 transition-all border border-green-500"
+          onClick={resetGame}
+          className="w-full mt-6 py-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-lg transition-all"
         >
-          INITIALIZE
+          Reset Progress
         </button>
       </div>
     </div>
   );
 };
 
-const SettingsModal = ({ onClose, onOpenPermanentShop, onOpenShop }) => {
-  const { gameState, setGrade } = useGame();
-  const grades = [
-    { label: 'Random', value: 0 },
-    { label: '1st', value: 1 },
-    { label: '2nd', value: 2 },
-    { label: '3rd', value: 3 },
-    { label: '4th', value: 4 },
-    { label: '5th', value: 5 },
-    { label: '6th', value: 6 },
-    { label: '7th', value: 7 },
-    { label: '8th', value: 8 },
-    { label: '9th', value: 9 },
-    { label: '10th', value: 10 },
-    { label: '11th', value: 11 },
-    { label: '12th', value: 12 },
-  ];
-  const handleGradeChange = (newGrade) => {
-    setGrade(newGrade);
-    onClose();
-  };
-  return (
-    <div className="fixed inset-0 bg-black z-50 flex items-center justify-center p-8">
-      <div className="bg-cyber-dark border-4 border-cyber-neonGreen p-8 rounded-lg shadow-neon w-full max-w-2xl relative">
-        <button
-          onClick={onClose}
-          className="absolute top-2 right-2 text-gray-500 hover:text-white font-bold text-xl"
-        >
-          ✕
-        </button>
-        <h2 className="text-3xl font-bold text-cyber-neonGreen mb-4 text-center tracking-widest">
-          SYSTEM SETTINGS
-        </h2>
-        <div className="space-y-3 mb-6 border border-gray-700 p-4 rounded">
-          <button
-            onClick={() => {
-              onClose();
-              if (onOpenShop) onOpenShop();
-            }}
-            className="w-full py-3 bg-cyan-700/80 text-white font-black rounded border border-cyan-500 hover:bg-cyan-600 transition-all"
-          >
-            ACCESS STAT UPGRADES
-          </button>
-          <button
-            onClick={() => {
-              onClose();
-              if (onOpenPermanentShop) onOpenPermanentShop();
-            }}
-            className="w-full py-3 bg-red-800/80 text-white font-black rounded border border-red-600 hover:bg-red-700 transition-all shadow-neonPurple"
-          >
-            ACCESS PERMANENT GEAR SHOP
-          </button>
-        </div>
-        <h3 className="text-xl text-cyber-text mb-4">Select Difficulty:</h3>
-        <div className="grid grid-cols-4 gap-3 border p-4 rounded border-cyber-gray">
-          {grades.map((g) => (
-            <button
-              key={g.value}
-              onClick={() => handleGradeChange(g.value)}
-              className={`p-3 border text-sm font-bold rounded transition-colors ${
-                gameState.grade === g.value
-                  ? 'bg-cyber-neonGreen !text-white shadow-neon'
-                  : 'border-green-500 text-green-500 hover:bg-green-500 hover:text-black'
-              }`}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={onClose}
-          className="mt-6 w-full py-2 bg-red-700 text-white font-bold rounded hover:bg-red-500"
-        >
-          RETURN TO BATTLE
-        </button>
-      </div>
-    </div>
-  );
-};
+// Main Game Component
+export default function PavingGame() {
+  const { gameState, completeIntro, getRevenuePerSecond } = usePavingGame();
+  const [showEquipmentShop, setShowEquipmentShop] = useState(false);
+  const [showWorkersShop, setShowWorkersShop] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
-// ==========================================
-// 3. MAIN COMPONENT (MasterGame)
-// ==========================================
-
-export default function MasterGame() {
-  const {
-    gameState,
-    updateResource,
-    advanceFloor,
-    takeDamage,
-    toggleStakes,
-    addLoot,
-    useItem,
-    decrementBuffsAndApplyEffects,
-    startRun,
-    returnToHub,
-    completeIntro,
-  } = useGame();
-
-  const [isShopOpen, setIsShopOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isPermanentShopOpen, setIsPermanentShopOpen] = useState(false);
-  const [hoverInfo, setHoverInfo] = useState('');
-
-  const [enemy, setEnemy] = useState({
-    maxHp: 20,
-    currentHp: 20,
-    name: 'Enemy',
-    icon: '❓',
-    isBoss: false,
-  });
-  const [question, setQuestion] = useState<any>(null);
-  const [feedback, setFeedback] = useState('');
-
-  // --- HUB LOGIC ---
-  const isReady = gameState.grade !== null;
-  const handleStartAttempt = () => {
-    if (!isReady) {
-      alert('PLEASE SELECT A GRADE LEVEL FIRST.');
-      return;
-    }
-    sfxBuy();
-    startRun();
-  };
-
-  // --- BATTLE LOGIC ---
-  useEffect(() => {
-    if (gameState.isGaming && gameState.grade !== null) {
-      const isBossFloor = gameState.floor % 10 === 0;
-      const stats = calculateEnemyStats(gameState.floor, isBossFloor);
-      const baseMonster = getRandomMonster();
-      const monster = isBossFloor
-        ? { name: 'THE ARCHITECT', icon: '👁️' }
-        : baseMonster;
-      setEnemy({ ...stats, ...monster, isBoss: isBossFloor });
-      nextQuestion();
-    }
-  }, [gameState.floor, gameState.grade, gameState.isGaming]);
-
-  const nextQuestion = () => {
-    setQuestion(generateMathQuestion(gameState.grade));
-    setFeedback('');
-  };
-  const handleReviveAction = () => {
-    takeDamage(-gameState.maxPlayerHp);
-    setFeedback('RESTORED.');
-    sfxBuy();
-  };
-  const handleDeath = () => {
-    sfxDamage();
-    alert('RUN ENDED.');
-    returnToHub();
-  };
-
-  const handleAnswer = (selectedOption: number) => {
-    sfxButton();
-    if (!question || gameState.playerHp <= 0) return;
-    const isCorrect = Number(selectedOption) === Number(question.answer);
-    const finalAttackPower = decrementBuffsAndApplyEffects(
-      gameState.attackPower
-    );
-    const isCrit = Math.random() < gameState.critChance;
-    const damageMultiplier = isCrit ? 2 : 1;
-    const damageDealt = finalAttackPower * damageMultiplier;
-
-    if (isCorrect) {
-      if (isCrit) {
-        sfxCrit();
-        setFeedback('CRIT! x2 DMG');
-      } else {
-        sfxAttack();
-        setFeedback('HIT!');
-      }
-      const newEnemyHp = enemy.currentHp - damageDealt;
-      setEnemy((prev) => ({ ...prev, currentHp: newEnemyHp }));
-      if (gameState.isHighStakes) updateResource('quantumKeys', 1);
-      else updateResource('gold', 10);
-      if (newEnemyHp <= 0) {
-        sfxWin();
-        setFeedback(enemy.isBoss ? 'BOSS DEFEATED!' : 'FLOOR CLEARED.');
-        handleLootDrop(enemy.isBoss);
-        setTimeout(() => advanceFloor(), 100);
-      } else {
-        setTimeout(nextQuestion, 100);
-      }
-    } else {
-      sfxDamage();
-      if (gameState.isHighStakes) {
-        setFeedback('FATAL ERROR');
-        setTimeout(handleDeath, 500);
-      } else {
-        setFeedback(
-          gameState.currentShield > 0 ? 'SHIELD HIT! (-1G)' : 'HP HIT! (-1G)'
-        );
-        updateResource('gold', -1);
-        takeDamage(10);
-        setTimeout(nextQuestion, 100);
-      }
-    }
-  };
-
-  const handleLootDrop = (isBoss: boolean) => {
-    const loot = generateLoot(isBoss);
-    if (loot) {
-      const result = addLoot(loot);
-      if (result === 'PERMANENT') setFeedback(`RARE DROP: ${loot.name}!`);
-      else if (result === 'TEMPORARY') setFeedback(`DROP: ${loot.name}`);
-    }
-  };
-  const handleUseItem = (itemId: string) => {
-    if (useItem(itemId)) {
-      sfxBuy();
-      setFeedback('USED ITEM');
-    }
-  };
-
-  // --- RENDER HUB ---
-  if (!gameState.hasSeenIntro) return <IntroModal onComplete={completeIntro} />;
-
-  if (!gameState.isGaming) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen space-y-8 bg-cyber-dark text-cyber-text p-8 relative overflow-hidden font-mono">
-        <h1 className="text-6xl font-black text-white uppercase tracking-widest drop-shadow-[0_0_15px_rgba(168,85,247,0.8)] z-10 text-center">
-          THE INFINITE
-          <br />
-          SCHOLAR
-        </h1>
-        <div className="flex gap-8 text-xl border border-cyber-gray p-6 rounded bg-cyber-black shadow-neonPurple/30 z-10">
-          <span className="text-yellow-400">GOLD: {gameState.gold}</span>
-          <span className="text-red-500">KEYS: {gameState.quantumKeys}</span>
-          <span className="text-cyan-400">ATK: {gameState.attackPower}</span>
-        </div>
-        <div className="space-y-4 w-96 z-10">
-          <button
-            onClick={handleStartAttempt}
-            className={`w-full py-4 text-2xl font-black rounded transition-all shadow-neon border-2 border-transparent ${
-              isReady
-                ? 'bg-white text-cyber-neonPurple hover:scale-[1.02]'
-                : 'bg-gray-800 text-gray-500 border-gray-700'
-            }`}
-          >
-            ENTER THE TOWER
-          </button>
-          <button
-            onClick={() => setIsPermanentShopOpen(true)}
-            className="w-full py-3 bg-red-800/80 text-white font-bold rounded border border-red-600 hover:bg-red-700 transition-all"
-          >
-            PERMANENT GEAR SHOP
-          </button>
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="w-full py-3 bg-gray-600 text-white font-bold rounded border border-gray-600 hover:bg-gray-500 transition-all"
-          >
-            SYSTEM SETTINGS / GRADE
-          </button>
-        </div>
-        {isSettingsOpen && (
-          <SettingsModal
-            onClose={() => setIsSettingsOpen(false)}
-            onOpenPermanentShop={() => setIsPermanentShopOpen(true)}
-            onOpenShop={() => {}}
-          />
-        )}
-        {isPermanentShopOpen && (
-          <PermanentShop onClose={() => setIsPermanentShopOpen(false)} />
-        )}
-      </div>
-    );
+  if (!gameState.hasSeenIntro) {
+    return <IntroModal onComplete={completeIntro} />;
   }
 
-  // --- RENDER BATTLE ---
-  if (gameState.grade === null)
-    return (
-      <SettingsModal
-        onClose={() => {}}
-        onOpenPermanentShop={() => setIsPermanentShopOpen(true)}
-        onOpenShop={() => setIsShopOpen(true)}
-      />
-    );
-  if (gameState.playerHp <= 0)
-    return (
-      <div className="flex h-screen items-center justify-center text-red-500 font-bold text-3xl">
-        FATAL ERROR{' '}
-        <button
-          onClick={handleDeath}
-          className="ml-4 bg-gray-800 p-2 text-white text-sm"
-        >
-          RESET
-        </button>
-      </div>
-    );
-  if (!question)
-    return <div className="text-white p-10 h-screen bg-black">Loading...</div>;
+  const revenuePerSecond = getRevenuePerSecond();
 
   return (
-    <main className="flex h-screen flex-col items-center p-4 bg-cyber-black overflow-hidden font-mono select-none">
-      <div className="w-full max-w-3xl flex justify-between items-end mb-4 border-b border-cyber-gray pb-2">
-        <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyber-neonGreen to-cyber-neonPurple tracking-widest">
-          THE INFINITE SCHOLAR
-        </h1>
-        <button
-          onClick={() => {
-            sfxButton();
-            setIsSettingsOpen(true);
-          }}
-          className="text-xs text-gray-500 hover:text-white transition-colors"
-        >
-          [ SYSTEM MENU ]
-        </button>
-      </div>
-      <div className="flex flex-col w-full max-w-3xl flex-1 border border-cyber-gray bg-cyber-dark/80 shadow-neon rounded-xl p-4 gap-4 relative">
-        <div className="flex justify-between items-center text-xs font-bold tracking-widest text-gray-400">
-          <div className="flex gap-4">
-            <span className="text-cyber-neonPurple">FLR {gameState.floor}</span>
-            <span className="text-white">ATK {gameState.attackPower}</span>
-          </div>
-          <div className="flex gap-4">
-            <span className="text-yellow-400">G: {gameState.gold}</span>
-            <span className="text-red-500">KEYS: {gameState.quantumKeys}</span>
+    <main className="flex min-h-screen flex-col items-center bg-gradient-to-b from-gray-900 via-gray-800 to-black text-white p-4 select-none">
+      {/* Header */}
+      <div className="w-full max-w-4xl">
+        <div className="text-center mb-6 pt-4">
+          <h1 className="text-4xl md:text-5xl font-black text-orange-500 mb-2 uppercase tracking-wider drop-shadow-lg">
+            🚧 Asphalt Empire 🚧
+          </h1>
+          <p className="text-gray-400 text-sm">Build Your Paving Business</p>
+        </div>
+
+        {/* Money Display */}
+        <div className="bg-gradient-to-r from-yellow-600 to-orange-600 rounded-xl p-6 mb-6 shadow-2xl">
+          <div className="text-center">
+            <div className="text-sm text-yellow-200 mb-1">Current Balance</div>
+            <div className="text-5xl font-black text-white mb-2">
+              {formatMoney(gameState.money)}
+            </div>
+            <div className="text-xl text-yellow-200">
+              +{formatMoney(revenuePerSecond)}/sec
+            </div>
           </div>
         </div>
 
-        <div className="w-full flex gap-2 h-4">
-          <div className="flex-1 bg-gray-900 rounded border border-cyan-900 relative">
-            <div
-              className="h-full bg-cyan-500 transition-all duration-300"
-              style={{
-                width: `${Math.max(
-                  0,
-                  (gameState.currentShield / gameState.maxShield) * 100
-                )}%`,
-              }}
-            />
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-bold drop-shadow-md">
-              SHIELD
-            </span>
+        {/* Quick Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-gray-800 rounded-lg p-4 text-center border-2 border-gray-700">
+            <div className="text-2xl mb-1">🚜</div>
+            <div className="text-sm text-gray-400">Equipment</div>
+            <div className="text-xl font-bold text-orange-400">
+              {gameState.equipment.reduce((sum: number, e: any) => sum + e.count, 0)}
+            </div>
           </div>
-          <div className="flex-1 bg-gray-900 rounded border border-red-900 relative">
-            <div
-              className="h-full bg-red-600 transition-all duration-300"
-              style={{
-                width: `${Math.max(
-                  0,
-                  (gameState.playerHp / gameState.maxPlayerHp) * 100
-                )}%`,
-              }}
-            />
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-bold drop-shadow-md">
-              HP
-            </span>
+          <div className="bg-gray-800 rounded-lg p-4 text-center border-2 border-gray-700">
+            <div className="text-2xl mb-1">👷</div>
+            <div className="text-sm text-gray-400">Workers</div>
+            <div className="text-xl font-bold text-blue-400">
+              {gameState.workers.filter((w: any) => w.owned).length}
+            </div>
+          </div>
+          <div className="bg-gray-800 rounded-lg p-4 text-center border-2 border-gray-700">
+            <div className="text-2xl mb-1">🏆</div>
+            <div className="text-sm text-gray-400">Achievements</div>
+            <div className="text-xl font-bold text-purple-400">
+              {gameState.achievements.length}
+            </div>
           </div>
         </div>
 
-        {/* INVENTORY */}
-        {(gameState.activeBuffs.length > 0 ||
-          gameState.permanentAchievements.length > 0) && (
-          <div className="flex gap-4 justify-center h-8">
-            {gameState.activeBuffs.map((b, i) => (
-              <span
-                key={i}
-                className="text-lg animate-pulse cursor-help"
-                onMouseEnter={() => setHoverInfo(`BUFF: ${b.name}`)}
-                onMouseLeave={() => setHoverInfo('')}
-              >
-                {b.icon}
-              </span>
-            ))}
-            {gameState.permanentAchievements.map((i) => (
-              <span
-                key={i.id}
-                className="text-lg cursor-help text-yellow-400"
-                onMouseEnter={() =>
-                  setHoverInfo(`PERM: ${i.name} - ${i.description}`)
-                }
-                onMouseLeave={() => setHoverInfo('')}
-              >
-                {i.icon}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Action Buttons */}
+        <div className="space-y-3 mb-6">
+          <button
+            onClick={() => setShowEquipmentShop(true)}
+            className="w-full py-4 bg-orange-600 hover:bg-orange-500 text-white text-xl font-bold rounded-lg transition-all shadow-lg uppercase tracking-wider"
+          >
+            🚜 Buy Equipment
+          </button>
+          <button
+            onClick={() => setShowWorkersShop(true)}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold rounded-lg transition-all shadow-lg uppercase tracking-wider"
+          >
+            👷 Hire Workers
+          </button>
+          <button
+            onClick={() => setShowStats(true)}
+            className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-lg transition-all uppercase tracking-wider"
+          >
+            📊 View Stats
+          </button>
+        </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center relative min-h-[150px]">
-          <div
-            className={`text-6xl mb-4 filter ${
-              enemy.isBoss
-                ? 'drop-shadow-[0_0_20px_rgba(255,215,0,0.8)] scale-125'
-                : 'drop-shadow-[0_0_10px_rgba(255,0,60,0.5)]'
-            } animate-pulse`}
-          >
-            {enemy.icon}
-          </div>
-          <h3
-            className={`text-sm font-bold tracking-widest mb-2 ${
-              enemy.isBoss ? 'text-yellow-400 text-lg' : 'text-cyber-neonRed'
-            }`}
-          >
-            {enemy.isBoss ? `⚠️ ${enemy.name} ⚠️` : enemy.name}
-          </h3>
-          <div className="w-32 h-1 bg-gray-800 rounded">
-            <div
-              className="h-full bg-red-600 transition-all"
-              style={{
-                width: `${Math.max(0, (enemy.currentHp / enemy.maxHp) * 100)}%`,
-              }}
-            />
-          </div>
-          {feedback && (
-            <div className="absolute inset-0 flex items-center justify-center z-10">
-              <h2 className="text-3xl font-black text-white bg-black/80 px-6 py-2 border-y-2 border-white tracking-widest shadow-xl backdrop-blur-sm animate-bounce">
-                {feedback}
-              </h2>
+        {/* Current Equipment Display */}
+        <div className="bg-gray-800 rounded-lg p-4 border-2 border-gray-700">
+          <h3 className="text-lg font-bold text-orange-400 mb-3 uppercase">Your Equipment</h3>
+          {gameState.equipment.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">No equipment yet!</p>
+          ) : (
+            <div className="space-y-2">
+              {gameState.equipment.map((eq: any) => {
+                const equipmentData = EQUIPMENT_TIERS.find((e: any) => e.id === eq.id);
+                if (!equipmentData) return null;
+                return (
+                  <div
+                    key={eq.id}
+                    className="flex items-center justify-between bg-gray-900 rounded p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{equipmentData.icon}</span>
+                      <div>
+                        <div className="font-bold text-white">{equipmentData.name}</div>
+                        <div className="text-xs text-gray-400">
+                          +{formatMoney(equipmentData.revenuePerSecond * eq.count)}/s
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-lg font-bold text-blue-400">×{eq.count}</div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
 
-        <div className="w-full text-center h-6">
-          <p className="text-xs font-mono text-cyan-500 tracking-widest uppercase">
-            {hoverInfo}
-          </p>
-        </div>
-
-        <div className="flex justify-between items-center h-10 px-2 bg-gray-900/50 rounded border border-gray-800">
-          <KeyActions onSkip={nextQuestion} onRevive={handleReviveAction} />
-          <div className="flex gap-2">
-            {gameState.tempInventory.map((item, i) => (
-              <button
-                key={i}
-                onClick={() => handleUseItem(item.id)}
-                onMouseEnter={() =>
-                  setHoverInfo(`ITEM: ${item.name} - ${item.description}`)
-                }
-                onMouseLeave={() => setHoverInfo('')}
-                className="bg-gray-800 text-white w-8 h-8 rounded border border-cyan-700 hover:bg-cyan-700 flex items-center justify-center text-sm transition-colors"
-              >
-                {item.icon}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <div className="flex justify-center w-full">
-            <button
-              onClick={() => {
-                sfxButton();
-                toggleStakes();
-              }}
-              className={`py-2 px-6 text-sm font-bold rounded border transition-colors flex items-center justify-center w-full max-w-sm ${
-                gameState.isHighStakes
-                  ? 'border-red-600 text-red-500 bg-red-900/20'
-                  : 'border-gray-600 text-gray-400 bg-gray-900'
-              }`}
-            >
-              {gameState.isHighStakes
-                ? '⚠️ HIGH STAKES ACTIVE'
-                : 'STANDARD MODE ACTIVATED'}
-            </button>
-          </div>
-          <div className="flex justify-center w-full">
-            <button
-              onClick={() => {
-                sfxButton();
-                setIsPermanentShopOpen(true);
-              }}
-              className="py-2 bg-red-800/80 text-white font-bold text-xs uppercase rounded hover:bg-red-700 transition-colors flex items-center justify-center w-full max-w-sm"
-            >
-              PERMANENT GEAR
-            </button>
-          </div>
-          <div className="flex justify-center w-full">
-            <button
-              onClick={() => {
-                sfxButton();
-                setIsShopOpen(true);
-              }}
-              className="py-2 bg-cyan-700/80 text-white font-bold text-xs uppercase rounded hover:bg-cyan-600 transition-colors flex items-center justify-center w-full max-w-sm"
-            >
-              STATS UPGRADES
-            </button>
-          </div>
-
-          <div className="bg-black border-t-2 border-cyber-neonGreen p-4 rounded-b-lg">
-            <h2 className="text-xl text-center mb-4 font-mono text-white tracking-wider">
-              {question.question}
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {question.options.map((opt: number, i: number) => (
-                <button
-                  key={i}
-                  onClick={() => handleAnswer(opt)}
-                  className="py-3 bg-gray-900 border border-cyber-neonGreen text-cyber-neonGreen hover:bg-cyber-neonGreen hover:text-black font-bold text-lg rounded transition-colors"
+        {/* Achievements Display */}
+        {gameState.achievements.length > 0 && (
+          <div className="bg-gray-800 rounded-lg p-4 border-2 border-purple-600 mt-4">
+            <h3 className="text-lg font-bold text-purple-400 mb-3 uppercase">
+              🏆 Achievements Unlocked
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {gameState.achievements.map((ach: any) => (
+                <div
+                  key={ach.id}
+                  className="bg-purple-900/50 border border-purple-500 rounded-lg px-3 py-2 text-center"
                 >
-                  {opt}
-                </button>
+                  <div className="text-2xl mb-1">{ach.icon}</div>
+                  <div className="text-xs text-purple-200">{ach.name}</div>
+                </div>
               ))}
             </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {isShopOpen && <ShopModal onClose={() => setIsShopOpen(false)} />}
-      {isSettingsOpen && (
-        <SettingsModal
-          onClose={() => setIsSettingsOpen(false)}
-          onOpenPermanentShop={() => setIsPermanentShopOpen(true)}
-          onOpenShop={() => setIsShopOpen(true)}
-        />
-      )}
-      {isPermanentShopOpen && (
-        <PermanentShop onClose={() => setIsPermanentShopOpen(false)} />
-      )}
+      {/* Modals */}
+      {showEquipmentShop && <EquipmentShop onClose={() => setShowEquipmentShop(false)} />}
+      {showWorkersShop && <WorkersShop onClose={() => setShowWorkersShop(false)} />}
+      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
     </main>
   );
 }
