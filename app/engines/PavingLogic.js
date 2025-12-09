@@ -5,7 +5,7 @@ export const EQUIPMENT_TIERS = [
   {
     id: 'shovel',
     name: 'Hand Shovel',
-    icon: '🪛',
+    icon: '🔨',
     cost: 0,
     revenuePerSecond: 1,
     description: 'Basic hand tool for small repairs',

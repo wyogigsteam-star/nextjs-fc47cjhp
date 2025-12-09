@@ -42,12 +42,13 @@ export const PavingGameProvider = ({ children }) => {
         const loadedState = JSON.parse(savedData);
         
         // Calculate offline earnings
+        const MAX_OFFLINE_EARNING_SECONDS = 3600; // 1 hour max
         const timeDiff = (Date.now() - loadedState.lastSaveTime) / 1000; // seconds
         const offlineRevenue = calculateRevenuePerSecond(
           loadedState.equipment || [],
           loadedState.workers || [],
           loadedState.achievements || []
-        ) * Math.min(timeDiff, 3600); // Max 1 hour offline earnings
+        ) * Math.min(timeDiff, MAX_OFFLINE_EARNING_SECONDS);
         
         setGameState({
           ...INITIAL_STATE,
@@ -76,6 +77,8 @@ export const PavingGameProvider = ({ children }) => {
 
   // Game loop - idle revenue generation
   useEffect(() => {
+    const UPDATE_INTERVAL_MS = 500; // Update twice per second for battery efficiency
+    
     const interval = setInterval(() => {
       const now = Date.now();
       const deltaTime = (now - lastTickRef.current) / 1000; // seconds
@@ -109,7 +112,7 @@ export const PavingGameProvider = ({ children }) => {
           };
         });
       }
-    }, 100); // Update 10 times per second for smooth display
+    }, UPDATE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [gameState.equipment, gameState.workers, gameState.achievements]);

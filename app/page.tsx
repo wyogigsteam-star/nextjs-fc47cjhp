@@ -26,7 +26,7 @@ const IntroModal = ({ onComplete }: { onComplete: () => void }) => {
             and work your way to owning a massive paving operation.
           </p>
           <p className="text-yellow-400 font-semibold">
-            💰 Earn money automatically while you&apos;re away!
+            💰 Earn money automatically while you're away!
           </p>
           <p className="text-sm text-gray-500">
             Tap equipment to buy more. Hire workers to boost your income!
