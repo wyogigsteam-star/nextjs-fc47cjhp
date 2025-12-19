@@ -53,9 +53,9 @@ export default function GoogleDocsIdleGame() {
               <input
                 type="text"
                 value={gameState.documentTitle}
-                onChange={(e) => {}}
                 className="text-lg border-none bg-transparent outline-none"
                 placeholder="Untitled Document"
+                readOnly
               />
             </div>
           </div>

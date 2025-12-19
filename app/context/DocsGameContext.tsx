@@ -311,7 +311,13 @@ export const DocsGameProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const typeWord = useCallback(() => {
     setGameState((prev) => {
       const clickPower = 1 + (prev.upgrades.fasterTyping?.level || 0);
-      const multiplier = getTotalMultiplier();
+      // Calculate multiplier from current state to avoid stale closure
+      let multiplier = 1;
+      Object.values(prev.secretFeatures).forEach((secret) => {
+        if (secret.unlocked && secret.effect === 'multiplier') {
+          multiplier *= secret.multiplier || 1;
+        }
+      });
       const wordsGained = clickPower * multiplier;
 
       return {
@@ -320,7 +326,7 @@ export const DocsGameProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         totalWordsTyped: prev.totalWordsTyped + wordsGained,
       };
     });
-  }, [getTotalMultiplier]);
+  }, []);
 
   const buyUpgrade = useCallback((upgradeId: string) => {
     const upgrade = gameState.upgrades[upgradeId];
