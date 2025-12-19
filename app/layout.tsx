@@ -1,14 +1,12 @@
 import './globals.css';
 import React from 'react';
-// FIX: Using explicit relative path to avoid alias failure (The Path Fix)
-import { GameProvider } from './context/GameContext';
+import { DocsGameProvider } from './context/DocsGameContext';
 
 export const metadata = {
-  title: 'The Infinite Scholar',
-  description: 'An Educational RPG',
+  title: 'Untitled Document - Google Docs',
+  description: 'A productivity tool for students',
 };
 
-// FIX: Applying explicit type annotation to the children prop (The TypeScript Fix)
 export default function RootLayout({
   children,
 }: {
@@ -16,8 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-cyber-black text-cyber-text font-mono h-screen w-screen overflow-hidden selection:bg-cyber-neonGreen selection:text-black">
-        <GameProvider>{children}</GameProvider>
+      <body className="bg-white text-black font-sans h-screen w-screen overflow-hidden">
+        <DocsGameProvider>{children}</DocsGameProvider>
       </body>
     </html>
   );
